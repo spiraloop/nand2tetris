@@ -11,4 +11,63 @@
 // "white" in every pixel;
 // the screen should remain fully clear as long as no key is pressed.
 
-// Put your code here.
+@screen_status
+M=0
+
+    (CHECK_KEYBOARD_PRESS)
+@KBD
+D=M
+@PRESSED
+D;JNE
+@NOT_PRESSED
+0;JMP
+
+    (PRESSED)
+@screen_status
+D=M
+@CHECK_KEYBOARD_PRESS
+D;JNE
+@screen_status
+M=-1
+@FILL_SCREEN_START
+0;JMP
+
+    (NOT_PRESSED)
+@screen_status
+D=M
+@CHECK_KEYBOARD_PRESS
+D;JEQ
+@screen_status
+M=0
+@FILL_SCREEN_START
+0;JMP
+
+
+// fill the screen to match the state 
+// going from the last to the first pixel
+    (FILL_SCREEN_START) 
+@24576// last screen pixel : @SCREEN 16384 + screen size 8192
+D=A
+@screen_cursor
+M=D
+
+    (FILL_SCREEN_STEP)
+
+@screen_status
+D=M
+@screen_cursor
+M=M-1 // move cursor
+A=M
+M=D
+
+// if cursor is not at the first pixel, continue iterating
+@SCREEN
+D=A
+@screen_cursor
+D=M-D
+@FILL_SCREEN_STEP
+D;JNE
+
+// otherwise we are done, go back to check the keyboard state
+@CHECK_KEYBOARD_PRESS
+0;JMP
