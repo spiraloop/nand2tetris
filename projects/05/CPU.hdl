@@ -27,17 +27,49 @@
 
 CHIP CPU {
 
-    IN  inM[16],         // M value input  (M = contents of RAM[A])
-        instruction[16], // Instruction for execution
-        reset;           // Signals whether to re-start the current
-                         // program (reset==1) or continue executing
-                         // the current program (reset==0).
+	IN  inM[16],         // M value input  (M = contents of RAM[A])
+		instruction[16], // Instruction for execution
+		reset;           // Signals whether to re-start the current
+						 // program (reset==1) or continue executing
+						 // the current program (reset==0).
 
-    OUT outM[16],        // M value output
-        writeM,          // Write to M? 
-        addressM[15],    // Address in data memory (of M)
-        pc[15];          // address of next instruction
+	OUT outM[16],        // M value output
+		writeM,          // Write to M? 
+		addressM[15],    // Address in data memory (of M)
+		pc[15];          // address of next instruction
 
-    PARTS:
-    // Put your code here:
+	PARTS:
+	
+	// decode
+	DMux(in=true, sel=instruction[15], a=isInstructionA, b=isNotInstructionA);
+
+	// control for register A
+	And(a=isNotInstructionA, b=instruction[5], out=destinationRegA);
+	Or(a=isInstructionA, b=destinationRegA, out=loadRegA);
+	Mux16(sel=isInstructionA, b[0..14]=instruction[0..14], a=aluOut, out=inA);
+
+	ARegister(in=inA, in[15]=false, load=loadRegA, out=regA, out[0..14]=addressM);
+
+	Mux16(sel=instruction[12], b=inM, a=regA, out=AOrM);
+
+	// control for register D
+	And(a=isNotInstructionA, b=instruction[4], out=destinationRegD);
+
+	DRegister(in=aluOut, load=destinationRegD, out=registerD);
+
+	// control for write M
+	And(a=isNotInstructionA, b=instruction[3], out=destinationM, out=writeM);
+
+	ALU(x=registerD, y=AOrM, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=aluOut, out=outM, zr=aluZr, ng=aluNg);
+
+	// control for the PC
+	And(a=aluNg, b=instruction[2], out=j0);
+	And(a=aluZr, b=instruction[1], out=j1);
+	Or(a=aluZr, b=aluNg, out=notAluPs);
+	Not(in=notAluPs, out=aluPs);
+	And(a=aluPs, b=instruction[0], out=j2);
+	Or8Way(in[0]=j0, in[1]=j1, in[2]=j2, out=jump);
+	And(a=isNotInstructionA, b=jump, out=loadJump);
+	PC(in=regA, load=loadJump, inc=true, reset=reset, out[0..14]=pc);
+
 }
