@@ -5,6 +5,12 @@ class CommandTypes(Enum):
     C_ARITHMETIC = 0
     C_PUSH = 1
     C_POP = 2
+    C_LABEL = 3
+    C_GOTO = 4
+    C_IF = 5
+    C_FUNCTION = 6
+    C_RETURN = 7
+    C_CALL = 8
 
 
 command_type_map = {
@@ -19,6 +25,12 @@ command_type_map = {
     'and': CommandTypes.C_ARITHMETIC,
     'or': CommandTypes.C_ARITHMETIC,
     'not': CommandTypes.C_ARITHMETIC,
+    'label': CommandTypes.C_LABEL,
+    'goto': CommandTypes.C_GOTO,
+    'if-goto': CommandTypes.C_IF,
+    'function': CommandTypes.C_FUNCTION,
+    'return': CommandTypes.C_RETURN,
+    'call': CommandTypes.C_CALL,
 }
 
 
