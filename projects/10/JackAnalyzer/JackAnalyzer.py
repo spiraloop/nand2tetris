@@ -27,20 +27,22 @@ def analyze_tokens(file_path):
         tokenizer = Tokenizer.Tokenizer(file, file_path)
         tokens = xml.Element("tokens")
         tokens.text = "\n"
+        token_list = []
         while tokenizer.type is not None:
             token = xml.SubElement(tokens, tokenizer.type.value)
             token.text = " " + str(tokenizer.value) + " "
             token.tail = "\n"
+            token_list.append(tokenizer.get_token())
             tokenizer.advance()
         with open(file_path.__str__().replace(".jack", "T.xml"), "wb") as tokens_xml_file:
             xml.ElementTree(tokens).write(tokens_xml_file)
             tokens_xml_file.write('\n'.encode('utf-8'))
+        return token_list
 
 
-def analyze_compilation(file_path):
+def analyze_compilation(file_path, token_list):
     with open(file_path, "r") as file, open(file_path.__str__().replace(".jack", ".xml"), "w") as compilation_xml_file:
-        tokenizer = Tokenizer.Tokenizer(file, file_path)
-        compilation_engine = CompilationEngine.CompilationEngine(tokenizer, compilation_xml_file)
+        compilation_engine = CompilationEngine.CompilationEngine(token_list, compilation_xml_file)
         compilation_engine.compile()
 
 
@@ -55,8 +57,13 @@ def main():
 
     for file in input_files:
         print("# Analyzing " + file.name + "...")
-        analyze_tokens(file)
-        analyze_compilation(file)
+        token_list = analyze_tokens(file)
+        try:
+            analyze_compilation(file, token_list)
+
+        except CompilationEngine.CompilationError as error:
+            print("Error in " + file.__str__() + (":" + error.token.line_number.__str__() if error.token is not None else ""))
+            print(error.message)
 
 
 main()

@@ -1,7 +1,5 @@
 import re
-import sys
 import Types
-
 
 # noinspection PyAttributeOutsideInit
 class Tokenizer:
@@ -12,7 +10,7 @@ class Tokenizer:
         self.reset()
 
     def reset(self):
-        self.line_number = -1
+        self.line_number = 0
         self.current_line = ''
         self.file.seek(0)
         self.advance()
@@ -21,6 +19,15 @@ class Tokenizer:
         self.type = None
         self.keyword = None
         self.value = None
+
+    def get_token(self):
+        class Token:
+            type = self.type
+            keyword = self.keyword
+            value = self.value
+            line_number = self.line_number
+
+        return Token
 
     def advance(self):
         self.__reset_token()
@@ -33,12 +40,15 @@ class Tokenizer:
 
             self.current_line = self.current_line.split("//")[0].strip()
             if self.current_line.startswith("/*"):
-                while not self.current_line.find("*/"):
+                end = self.current_line.find("*/")
+                while end == -1:
                     self.__next_line()
                     if self.current_line == '':
+                        self.error("Could find the end of the comment block")
                         return
+                    end = self.current_line.find("*/")
 
-                self.current_line = self.current_line.split("*/", 1)[1]
+                self.current_line = self.current_line[end+2:]
                 continue
 
             if self.current_line == '':
@@ -68,7 +78,7 @@ class Tokenizer:
 
             string_match = re.search(r'^["](.+)["]', self.current_line)
             if string_match is not None:
-                self.type = Types.Tokens.INT_CONST
+                self.type = Types.Tokens.STRING_CONST
                 self.value = string_match.group(1)
                 self.current_line = self.current_line[(len(self.value) + 2):]
                 return

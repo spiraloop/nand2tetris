@@ -32,9 +32,18 @@ class TagScope:
         self.xml.write("</" + self.tag + ">\n", not self.inline)
 
 
+class CompilationError(Exception):
+    def __init__(self, message, token):
+        self.message = message
+        self.token = token
+
+
 class CompilationEngine:
-    def __init__(self, tokenizer, output_file):
-        self.tokenizer = tokenizer
+    def __init__(self, token_list, output_file):
+        self.token_list = token_list
+        self.token_list_size = len(token_list)
+        self.token_cursor = 0
+        self.current_token = token_list[self.token_cursor]
         self.xml = Xml(output_file)
 
     def compile(self):
@@ -42,10 +51,15 @@ class CompilationEngine:
         pass
 
     def advance(self):
-        self.tokenizer.advance()
+        self.token_cursor += 1
+        if self.token_cursor > self.token_list_size:
+            self.error("Unexpected end of file")
+
+        if self.token_cursor < self.token_list_size:
+            self.current_token = self.token_list[self.token_cursor]
 
     def class_(self):
-        with self.xml.tag_scope("class") as tag:
+        with self.xml.tag_scope("class"):
             self.keyword("class")
 
             self.identifier()
@@ -60,7 +74,7 @@ class CompilationEngine:
     def class_variables(self):
         declaration_type = ["static", "field"]
         while self.match(Types.Tokens.KEYWORD, declaration_type):
-            with self.xml.tag_scope("classVarDec") as tag:
+            with self.xml.tag_scope("classVarDec"):
                 self.keyword(declaration_type)
                 self.variable_list()
                 self.symbol(";")
@@ -79,7 +93,7 @@ class CompilationEngine:
             self.subroutine()
 
     def subroutine(self):
-        with self.xml.tag_scope("subroutineDec") as subroutineDec:
+        with self.xml.tag_scope("subroutineDec"):
             self.keyword(self.routine_types)
 
             if self.match(Types.Tokens.KEYWORD, ["void"]):
@@ -93,27 +107,31 @@ class CompilationEngine:
             self.parameter_list()
             self.symbol(")")
 
-            with self.xml.tag_scope("subroutineBody") as subroutineBody:
+            with self.xml.tag_scope("subroutineBody"):
                 self.symbol("{")
                 self.subroutine_variables()
                 self.statements()
                 self.symbol("}")
 
     def subroutine_variables(self):
-        while self.match(Types.Tokens.KEYWORD, "var"):
-            with self.xml.tag_scope("varDec") as varDec:
+        while self.match(Types.Tokens.KEYWORD, ["var"]):
+            with self.xml.tag_scope("varDec"):
                 self.keyword("var")
                 self.variable_list()
                 self.symbol(";")
 
-    def match(self, token_type, values):
-        return self.match_token(token_type) and self.match_value(values)
+    def match(self, token_type, values=None):
+        return self.match_(self.current_token, token_type, values)
 
-    def match_token(self, token_type):
-        return self.tokenizer.type == token_type
+    def match_next(self, token_type, values=None):
+        next_cursor = self.token_cursor + 1
+        if next_cursor > self.token_list_size:
+            return False
+        return self.match_(self.token_list[next_cursor], token_type, values)
 
-    def match_value(self, values):
-        return self.tokenizer.value in values
+    @staticmethod
+    def match_(token, token_type, values):
+        return token.type == token_type and (values is None or token.value in values)
 
     @staticmethod
     def expectation_message(expected, got):
@@ -129,33 +147,37 @@ class CompilationEngine:
 
     def get_expectation_missmatch(self, token_types, values):
         expected = str("|".join(token_types)) + (" " + str("|".join(values))) if values is not None else ""
-        got = str(self.tokenizer.type.value) + (
-                " " + str(self.tokenizer.value)) if self.tokenizer.value is not None else ""
+        got = str(self.current_token.type.value) + (
+                " " + str(self.current_token.value)) if self.current_token.value is not None else ""
         return expected, got
 
     def error(self, error):
-        self.tokenizer.error("Compilation error\n" + error)
+        raise CompilationError(error, self.current_token)
 
     def keyword(self, values):
-        if self.match_token(Types.Tokens.KEYWORD) and self.match_value(values):
+        if self.match(Types.Tokens.KEYWORD, values):
             self.write_token()
         else:
             self.error_token_missmatch(Types.Tokens.KEYWORD, values)
         self.advance()
 
     def write_token(self):
-        with self.xml.tag_scope(str(self.tokenizer.type.value), True) as token:
-            self.xml.write(" " + str(self.tokenizer.value) + " ", False)
+        with self.xml.tag_scope(str(self.current_token.type.value), True):
+            text = str(self.current_token.value)
+            text = text.replace("&", "&amp;")
+            text = text.replace("<", "&lt;")
+            text = text.replace(">", "&gt;")
+            self.xml.write(" " + text + " ", False)
 
     def identifier(self):
-        if self.match_identifier():
+        if self.match(Types.Tokens.IDENTIFIER):
             self.write_token()
         else:
             self.error_token_missmatch(Types.Tokens.IDENTIFIER, ["<identifier>"])
         self.advance()
 
     def symbol(self, values):
-        if self.match_token(Types.Tokens.SYMBOL) and self.match_value(values):
+        if self.match(Types.Tokens.SYMBOL, values):
             self.write_token()
         else:
             self.error_token_missmatch(Types.Tokens.SYMBOL, values)
@@ -164,10 +186,10 @@ class CompilationEngine:
     type_keyword_values = ["int", "char", "boolean"]
 
     def match_type(self):
-        return self.match(Types.Tokens.KEYWORD, self.type_keyword_values) or self.match_token(Types.Tokens.IDENTIFIER)
+        return self.match(Types.Tokens.KEYWORD, self.type_keyword_values) or self.match(Types.Tokens.IDENTIFIER)
 
     def error_token_missmatch(self, token_type, values):
-        (expected, got) = self.get_expectation_missmatch([str(token_type)], values)
+        (expected, got) = self.get_expectation_missmatch([str(token_type.value)], values)
         self.error(self.expectation_message(expected, got))
 
     def type_(self):
@@ -181,7 +203,7 @@ class CompilationEngine:
         self.advance()
 
     def parameter_list(self):
-        with self.xml.tag_scope("parameterList") as tag:
+        with self.xml.tag_scope("parameterList"):
             if self.match_type():
                 self.type_()
                 self.identifier()
@@ -191,7 +213,7 @@ class CompilationEngine:
                     self.identifier()
 
     def statements(self):
-        with self.xml.tag_scope("statements") as statements:
+        with self.xml.tag_scope("statements"):
             while self.match_statement():
                 self.statement()
 
@@ -200,14 +222,18 @@ class CompilationEngine:
 
     def statement(self):
         if self.match(Types.Tokens.KEYWORD, ["let"]):
-            with self.xml.tag_scope("letStatement") as letStatement:
+            with self.xml.tag_scope("letStatement"):
                 self.keyword("let")
                 self.identifier()
+                if self.match(Types.Tokens.SYMBOL, "["):
+                    self.symbol("[")
+                    self.expression()
+                    self.symbol("]")
                 self.symbol("=")
                 self.expression()
                 self.symbol(";")
         elif self.match(Types.Tokens.KEYWORD, ["if"]):
-            with self.xml.tag_scope("ifStatement") as ifStatement:
+            with self.xml.tag_scope("ifStatement"):
                 self.keyword("if")
                 self.symbol("(")
                 self.expression()
@@ -221,7 +247,7 @@ class CompilationEngine:
                     self.statements()
                     self.symbol("}")
         elif self.match(Types.Tokens.KEYWORD, ["while"]):
-            with self.xml.tag_scope("whileStatement") as whileStatement:
+            with self.xml.tag_scope("whileStatement"):
                 self.keyword("while")
                 self.symbol("(")
                 self.expression()
@@ -230,24 +256,48 @@ class CompilationEngine:
                 self.statements()
                 self.symbol("}")
         elif self.match(Types.Tokens.KEYWORD, ["do"]):
-            with self.xml.tag_scope("doStatement") as doStatement:
+            with self.xml.tag_scope("doStatement"):
                 self.keyword("do")
                 self.subroutine_call()
                 self.symbol(";")
         elif self.match(Types.Tokens.KEYWORD, ["return"]):
-            with self.xml.tag_scope("returnStatement") as returnStatement:
+            with self.xml.tag_scope("returnStatement"):
                 self.keyword("return")
-                if self.match_token(Types.Tokens.IDENTIFIER):
+                if self.match_term():
                     self.expression()
                 self.symbol(";")
 
     def expression(self):
-        with self.xml.tag_scope("expression") as expression:
+        with self.xml.tag_scope("expression"):
             self.term()
+            ops = "+-*/&|<>="
+            while self.match(Types.Tokens.SYMBOL, ops):
+                self.symbol(ops)
+                self.term()
 
     def term(self):
-        with self.xml.tag_scope("term") as term:
-            self.identifier()
+        with self.xml.tag_scope("term"):
+            if self.match_term_constants():
+                self.write_token()
+                self.advance()
+            elif self.match(Types.Tokens.IDENTIFIER):
+                if self.match_next(Types.Tokens.SYMBOL, ".("):
+                    self.subroutine_call()
+                else:
+                    self.identifier()
+                    if self.match(Types.Tokens.SYMBOL, "["):
+                        self.symbol("[")
+                        self.expression()
+                        self.symbol("]")
+            elif self.match(Types.Tokens.SYMBOL, "("):
+                self.symbol("(")
+                self.expression()
+                self.symbol(")")
+            elif self.match(Types.Tokens.SYMBOL, "-~"):
+                self.symbol(["-", "~"])
+                self.term()
+            else:
+                self.error("Invalid term : " + str(self.current_token.type.value) + " " + self.current_token.value)
 
     def subroutine_call(self):
         self.identifier()
@@ -259,12 +309,17 @@ class CompilationEngine:
         self.symbol(")")
 
     def expression_list(self):
-        with self.xml.tag_scope("expressionList") as expressionList:
-            if self.match_identifier():
+        with self.xml.tag_scope("expressionList"):
+            if self.match_term():
                 self.expression()
                 while self.match(Types.Tokens.SYMBOL, ","):
                     self.symbol(",")
                     self.expression()
 
-    def match_identifier(self):
-        return self.match_token(Types.Tokens.IDENTIFIER) or self.match(Types.Tokens.KEYWORD, ["this"])
+    def match_term(self):
+        return self.match_term_constants() or self.match(Types.Tokens.IDENTIFIER) or self.match(Types.Tokens.SYMBOL, "(-~")
+
+    def match_term_constants(self):
+        return self.match(Types.Tokens.INT_CONST) or self.match(Types.Tokens.STRING_CONST) or self.match(Types.Tokens.KEYWORD, self.keyword_constants)
+
+    keyword_constants = ["true", "false", "null", "this"]
